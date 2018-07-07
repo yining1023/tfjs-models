@@ -14,11 +14,11 @@
  * limitations under the License.
  * =============================================================================
  */
-import * as mobilenetModule from '@tensorflow-models/mobilenet';
+import * as posenetModule from '@tensorflow-models/posenet';
 import * as tf from '@tensorflow/tfjs';
 import Stats from 'stats.js';
 
-import * as knnClassifier from '../src/index';
+import * as knnClassifier from '@tensorflow-models/knn-classifier';
 
 const videoWidth = 300;
 const videoHeight = 250;
@@ -33,7 +33,7 @@ const TOPK = 3;
 const infoTexts = [];
 let training = -1;
 let classifier;
-let mobilenet;
+let posenet;
 let video;
 
 function isAndroid() {
@@ -55,7 +55,7 @@ function isMobile() {
 async function setupCamera() {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     throw new Error(
-        'Browser API navigator.mediaDevices.getUserMedia not available');
+      'Browser API navigator.mediaDevices.getUserMedia not available');
   }
 
   const video = document.getElementById('video');
@@ -112,7 +112,7 @@ function setupGui() {
  * Sets up a frames per second panel on the top-left of the window
  */
 function setupFPS() {
-  stats.showPanel(0);  // 0: fps, 1: ms, 2: mb, 3+: custom
+  stats.showPanel(0); // 0: fps, 1: ms, 2: mb, 3+: custom
   document.body.appendChild(stats.dom);
 }
 
@@ -123,14 +123,19 @@ async function animate() {
   stats.begin();
 
   // Get image data from video element
-  const image = tf.fromPixels(video);
+  // const image = tf.fromPixels(video);
   let logits;
-  // 'conv_preds' is the logits activation of MobileNet.
-  const infer = () => mobilenet.infer(image, 'conv_preds');
+
+  const infer = async () => {
+    const poses = await posenet.estimateSinglePose(video, 0.5, false, 16);
+    const poseArray = poses.keypoints.map(p => [p.score, p.position.x, p.position.y]);
+    const logits = tf.tensor2d(poseArray);
+    return logits;
+  }
 
   // Train class if one of the buttons is held down
   if (training != -1) {
-    logits = infer();
+    logits = await infer();
     // Add current image to classifier
     classifier.addExample(logits, training);
   }
@@ -138,7 +143,7 @@ async function animate() {
   // If the classifier has examples for any classes, make a prediction!
   const numClasses = classifier.getNumClasses();
   if (numClasses > 0) {
-    logits = infer();
+    logits = await infer();
 
     const res = await classifier.predictClass(logits, TOPK);
     for (let i = 0; i < NUM_CLASSES; i++) {
@@ -158,7 +163,7 @@ async function animate() {
     }
   }
 
-  image.dispose();
+  // image.dispose();
   if (logits != null) {
     logits.dispose();
   }
@@ -174,7 +179,7 @@ async function animate() {
  */
 export async function bindPage() {
   classifier = knnClassifier.create();
-  mobilenet = await mobilenetModule.load();
+  posenet = await posenetModule.load();
 
   document.getElementById('loading').style.display = 'none';
   document.getElementById('main').style.display = 'block';
@@ -190,7 +195,7 @@ export async function bindPage() {
   } catch (e) {
     let info = document.getElementById('info');
     info.textContent = 'this browser does not support video capture,' +
-        'or this device does not have a camera';
+      'or this device does not have a camera';
     info.style.display = 'block';
     throw e;
   }
@@ -200,6 +205,6 @@ export async function bindPage() {
 }
 
 navigator.getUserMedia = navigator.getUserMedia ||
-    navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
+  navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
 // kick off the demo
 bindPage();
