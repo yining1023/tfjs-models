@@ -17,8 +17,11 @@
 import * as posenetModule from '@tensorflow-models/posenet';
 import * as tf from '@tensorflow/tfjs';
 import Stats from 'stats.js';
-
 import * as knnClassifier from '@tensorflow-models/knn-classifier';
+import {
+  drawKeypoints,
+  drawSkeleton
+} from './demo_util';
 
 const videoWidth = 300;
 const videoHeight = 250;
@@ -122,13 +125,45 @@ function setupFPS() {
 async function animate() {
   stats.begin();
 
-  // Get image data from video element
-  // const image = tf.fromPixels(video);
+  // Create Canvas
+  const canvas = document.getElementById('output');
+  const ctx = canvas.getContext('2d');
+
+  canvas.width = videoWidth;
+  canvas.height = videoHeight;
+
+  ctx.clearRect(0, 0, videoWidth, videoHeight);
+
+  ctx.save();
+  ctx.scale(-1, 1);
+  ctx.translate(-videoWidth, 0);
+  // Show video on the canvas
+  ctx.drawImage(video, 0, 0, videoWidth, videoHeight);
+  ctx.restore();
+
   let logits;
 
+  const drawPose = (poses) => {
+    // For each pose (i.e. person) detected in an image, loop through the poses
+    // and draw the resulting skeleton and keypoints
+    const {
+      score,
+      keypoints
+    } = poses;
+    drawKeypoints(keypoints, 0.5, ctx);
+    drawSkeleton(keypoints, 0.5, ctx);
+  }
+
   const infer = async () => {
-    const poses = await posenet.estimateSinglePose(video, 0.5, false, 16);
+    // Get poses results from posenet model
+    const poses = await posenet.estimateSinglePose(video, 0.5, true, 16);
+
+    drawPose(poses);
+
+    // Convert poses results to a 2d array [[score0, x0, y0],...,[score16, x16, y16]]
     const poseArray = poses.keypoints.map(p => [p.score, p.position.x, p.position.y]);
+
+    // Create a tensor2d from 2d array
     const logits = tf.tensor2d(poseArray);
     return logits;
   }
@@ -163,7 +198,6 @@ async function animate() {
     }
   }
 
-  // image.dispose();
   if (logits != null) {
     logits.dispose();
   }
